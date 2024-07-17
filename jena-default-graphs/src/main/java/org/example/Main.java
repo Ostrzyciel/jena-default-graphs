@@ -1,15 +1,18 @@
 package org.example;
 
-import org.apache.jena.base.Sys;
 import org.apache.jena.graph.NodeFactory;
+import org.apache.jena.graph.Triple;
 import org.apache.jena.riot.RDFDataMgr;
 import org.apache.jena.riot.RDFFormat;
+import org.apache.jena.riot.RDFParser;
+import org.apache.jena.riot.system.StreamRDF;
+import org.apache.jena.riot.system.StreamRDFBase;
+import org.apache.jena.riot.system.StreamRDFLib;
 import org.apache.jena.sparql.core.DatasetGraphFactory;
 import org.apache.jena.sparql.core.Quad;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
-import java.io.OutputStream;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Vector;
@@ -76,20 +79,34 @@ public class Main {
                     continue;
                 }
 
+                var readStream = new StreamRDFBase() {
+                    @Override
+                    public void quad(Quad quad) {
+                        if (quad.getGraph() == null) {
+                            results.add(new Result(format.toString(), entry.getKey(),
+                                    "null graph"));
+                        } else if (quad.isDefaultGraphExplicit()) {
+                            results.add(new Result(format.toString(), entry.getKey(),
+                                    "Quad.defaultGraphIRI"));
+                        } else if (quad.isDefaultGraphGenerated()) {
+                            results.add(new Result(format.toString(), entry.getKey(),
+                                    "Quad.defaultGraphNodeGenerated"));
+                        } else {
+                            results.add(new Result(format.toString(), entry.getKey(),
+                                    "unexpected graph (???)"));
+                        }
+                    }
+
+                    @Override
+                    public void triple(Triple triple) {
+                        results.add(new Result(format.toString(), entry.getKey(),
+                                "triple instead of quad"));
+                    }
+                };
+
                 var input = new ByteArrayInputStream(output.toByteArray());
                 try {
-                    var readDatasetGraph = DatasetGraphFactory.create();
-                    RDFDataMgr.read(readDatasetGraph, input, format.getLang());
-                    var readQuad = readDatasetGraph.find().next();
-                    if (readQuad.getGraph() == null) {
-                        results.add(new Result(format.toString(), entry.getKey(), "null graph"));
-                    } else if (readQuad.isDefaultGraphExplicit()) {
-                        results.add(new Result(format.toString(), entry.getKey(), "Quad.defaultGraphIRI"));
-                    } else if (readQuad.isDefaultGraphGenerated()) {
-                        results.add(new Result(format.toString(), entry.getKey(), "Quad.defaultGraphNodeGenerated"));
-                    } else {
-                        results.add(new Result(format.toString(), entry.getKey(), "unexpected graph (???)"));
-                    }
+                    RDFParser.source(input).lang(format.getLang()).parse(readStream);
                 } catch (Throwable e) {
                     System.out.println("Failed to read " + entry.getKey() + " in " + format);
                     e.printStackTrace();
